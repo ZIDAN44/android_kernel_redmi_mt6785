@@ -75,6 +75,7 @@
 #include <uapi/linux/android/binder.h>
 #include <uapi/linux/sched/types.h>
 #include "binder_alloc.h"
+#include "binder_internal.h"
 #include "binder_trace.h"
 
 #ifdef CONFIG_MTK_ENG_BUILD
@@ -358,20 +359,6 @@ static struct binder_transaction_log_entry entry_failed[32];
 struct binder_transaction_log_entry entry_t[MAX_ENG_TRANS_LOG_BUFF_LEN];
 #endif
 #endif
-
-struct binder_context {
-	struct binder_node *binder_context_mgr_node;
-	struct mutex context_mgr_node_lock;
-
-	kuid_t binder_context_mgr_uid;
-	const char *name;
-};
-
-struct binder_device {
-	struct hlist_node hlist;
-	struct miscdevice miscdev;
-	struct binder_context context;
-};
 
 #ifdef BINDER_WATCHDOG
 #ifdef CONFIG_MTK_EXTMEM
@@ -5990,8 +5977,12 @@ static int binder_open(struct inode *nodp, struct file *filp)
 		proc->default_priority.prio = NICE_TO_PRIO(0);
 	}
 
-	binder_dev = container_of(filp->private_data, struct binder_device,
-				  miscdev);
+	/* binderfs stashes devices in i_private */
+	if (is_binderfs_device(nodp))
+		binder_dev = nodp->i_private;
+	else
+		binder_dev = container_of(filp->private_data,
+					  struct binder_device, miscdev);
 	proc->context = &binder_dev->context;
 	binder_alloc_init(&proc->alloc);
 
@@ -6886,7 +6877,7 @@ static int transaction_log_show(struct seq_file *m, void *unused)
 BINDER_DEBUG_ENTRY(timeout_log);
 #endif
 
-static const struct file_operations binder_fops = {
+const struct file_operations binder_fops = {
 	.owner = THIS_MODULE,
 	.poll = binder_poll,
 	.unlocked_ioctl = binder_ioctl,
